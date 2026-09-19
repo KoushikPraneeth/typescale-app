@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="TypeScale multiplayer typing arena">
+  <title>TypeScale — Multiplayer Typing Arena</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <main class="shell">
+    <header><a class="brand" href="/" aria-label="TypeScale home"><span>TYPE</span>SCALE</a><span class="status"><i></i> LOCAL ARENA</span></header>
+
+    <section id="welcome" class="hero panel">
+      <div class="eyebrow">REAL-TIME MULTIPLAYER</div>
+      <h1>Race your words.<br><em>Scale your speed.</em></h1>
+      <p>Join a live room, race the same passage, and watch every keystroke move the field.</p>
+      <form id="join-form">
+        <label for="nickname">Choose your racer name</label>
+        <div class="join-row">
+          <input id="nickname" maxlength="20" minlength="2" pattern="[A-Za-z0-9][A-Za-z0-9 _-]{1,19}" autocomplete="nickname" placeholder="e.g. CloudRacer" required>
+          <button type="submit">Enter race <span>→</span></button>
+        </div>
+        <small id="form-error" role="alert"></small>
+      </form>
+      <div class="features"><span>⚡ Live WebSockets</span><span>◎ Server validated</span><span>◈ Up to 4 racers</span></div>
+    </section>
+
+    <section id="arena" class="panel hidden" aria-live="polite">
+      <div class="arena-head"><div><div class="eyebrow">ROOM <b id="room-code">—</b></div><h2 id="phase">Finding an opponent…</h2></div><div id="countdown" class="countdown"></div></div>
+      <div id="players" class="players"></div>
+      <div id="passage" class="passage" aria-label="Typing passage">The passage will appear when the room is ready.</div>
+      <textarea id="typing-input" rows="3" disabled spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Type the passage here" placeholder="Waiting for the race to start…"></textarea>
+      <div class="metrics"><div><strong id="wpm">0</strong><span>WPM</span></div><div><strong id="accuracy">100%</strong><span>ACCURACY</span></div><div><strong id="progress">0%</strong><span>PROGRESS</span></div></div>
+    </section>
+
+    <section id="results" class="panel hidden">
+      <div class="eyebrow">RACE COMPLETE</div><h2>Final standings</h2>
+      <div id="standings"></div><button id="again">Race again <span>↻</span></button>
+    </section>
+    <footer>TypeScale local MVP · Built for the cloud, playable on your machine.</footer>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
