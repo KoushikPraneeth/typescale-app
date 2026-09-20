@@ -30,7 +30,8 @@ class Player:
     player_id: str
     nickname: str
     socket: WebSocket
-    validated_chars: int = 0
+    typed_chars: int = 0
+    correct_chars: int = 0
     accuracy: float = 100.0
     wpm: float = 0.0
     placement: Optional[int] = None
@@ -72,7 +73,8 @@ class GameManager:
             {
                 "playerId": p.player_id,
                 "nickname": p.nickname,
-                "progress": round(100 * p.validated_chars / len(room.paragraph), 1),
+                "progress": round(100 * p.typed_chars / len(room.paragraph), 1),
+                "correctChars": p.correct_chars,
                 "wpm": round(p.wpm, 1),
                 "accuracy": round(p.accuracy, 1),
                 "placement": p.placement,
@@ -157,28 +159,34 @@ class GameManager:
             return
 
         expected = room.paragraph
-        common = 0
-        for actual, wanted in zip(typed, expected):
-            if actual != wanted:
-                break
-            common += 1
-        validated = max(player.validated_chars, common)
-        player.validated_chars = min(validated, len(expected))
-        player.accuracy = 100.0 if not typed else 100.0 * common / len(typed)
+        incorrect_positions = [
+            index
+            for index, actual in enumerate(typed)
+            if index >= len(expected) or actual != expected[index]
+        ]
+        player.typed_chars = min(len(typed), len(expected))
+        player.correct_chars = sum(
+            actual == wanted for actual, wanted in zip(typed, expected)
+        )
+        player.accuracy = (
+            100.0 if not typed else 100.0 * player.correct_chars / len(typed)
+        )
         elapsed = max(time.monotonic() - room.started_at, 0.25)
-        player.wpm = (player.validated_chars / 5.0) / (elapsed / 60.0)
+        player.wpm = (player.correct_chars / 5.0) / (elapsed / 60.0)
 
-        if typed != expected[: len(typed)]:
+        if incorrect_positions:
             await self._send(
                 player,
                 {
                     "type": "validation_error",
-                    "validatedChars": player.validated_chars,
+                    "typedChars": player.typed_chars,
+                    "correctChars": player.correct_chars,
+                    "incorrectPositions": incorrect_positions,
                     "accuracy": round(player.accuracy, 1),
                 },
             )
 
-        if player.validated_chars == len(expected) and player.placement is None:
+        if len(typed) >= len(expected) and player.placement is None:
             player.placement = 1 + sum(
                 1 for candidate in room.players.values() if candidate.placement is not None
             )

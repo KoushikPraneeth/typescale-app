@@ -24,6 +24,41 @@ def test_health_and_frontend():
         assert "TypeScale" in page.text
 
 
+def test_passage_highlights_only_the_incorrect_character():
+    script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const elements = new Proxy({}, {
+  get(target, key) {
+    if (!target[key]) target[key] = {
+      innerHTML: "", textContent: "", value: "", disabled: false,
+      classList: {toggle() {}, add() {}, remove() {}, contains() { return false; }},
+      addEventListener() {}, focus() {}
+    };
+    return target[key];
+  }
+});
+global.document = {getElementById: id => elements[id]};
+global.location = {protocol: "http:", host: "localhost"};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+paragraph = "abcd";
+renderPassage("axc");
+process.stdout.write(elements.passage.innerHTML);
+'''
+    result = subprocess.run(
+        ["node", "-e", script, str(ROOT / "frontend" / "app.js")],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    assert result.stdout == (
+        '<span class="done">a</span>'
+        '<span class="wrong">b</span>'
+        '<span class="done">c</span>'
+        '<span class="next">d</span>'
+    )
+
+
 def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -81,10 +116,19 @@ async def play_two_player_race(port):
             receive_until(alpha, "race_started"), receive_until(beta, "race_started")
         )
 
-        await alpha.send(json.dumps({"type": "progress", "text": "wrong"}))
+        one_wrong = paragraph[0] + "x" + paragraph[2:5]
+        await alpha.send(json.dumps({"type": "progress", "text": one_wrong}))
         rejected = await receive_until(alpha, "validation_error")
-        assert rejected["validatedChars"] == 0
-        await alpha.send(json.dumps({"type": "progress", "text": paragraph}))
+        assert rejected["incorrectPositions"] == [1]
+        assert rejected["correctChars"] == 4
+        assert rejected["accuracy"] == 80.0
+        progress = await receive_until(alpha, "player_progress")
+        alpha_state = next(
+            player for player in progress["players"] if player["nickname"] == "Alpha"
+        )
+        assert alpha_state["progress"] == round(500 / len(paragraph), 1)
+        alpha_finish = paragraph[0] + "x" + paragraph[2:]
+        await alpha.send(json.dumps({"type": "progress", "text": alpha_finish}))
         await receive_until(alpha, "player_progress")
         await beta.send(json.dumps({"type": "progress", "text": paragraph}))
         results_a, results_b = await asyncio.gather(
@@ -93,6 +137,7 @@ async def play_two_player_race(port):
         assert results_a == results_b
         assert [item["nickname"] for item in results_a["standings"]] == ["Alpha", "Beta"]
         assert all(item["wpm"] > 0 for item in results_a["standings"])
+        assert results_a["standings"][0]["accuracy"] < 100
 
 
 def test_real_two_client_websocket_race(live_server):
