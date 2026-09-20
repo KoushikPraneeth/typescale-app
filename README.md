@@ -2,7 +2,7 @@
 
 TypeScale is a local multiplayer typing race and a distributed-application foundation for an Azure/AKS engineering project.
 
-**Current milestone: v0.2 — Redis-backed distributed multiplayer.**
+**Current milestone: v0.3 — containerized distributed multiplayer.**
 
 ## What works now
 
@@ -15,20 +15,22 @@ TypeScale is a local multiplayer typing race and a distributed-application found
 - Atomic Lua operations for matchmaking slots and finish ordering
 - Redis Pub/Sub fan-out between independent FastAPI processes
 - Active-room and completed-room TTL cleanup
+- Non-root Python 3.13 application image with a Docker health check
+- Docker Compose stack with private Redis and two FastAPI replicas
+- Nginx HTTP/WebSocket gateway with round-robin upstream routing
 - Responsive browser UI, disconnect handling, and replay flow
 - Automated same-process and cross-process WebSocket race tests
 
 ## Current architecture
 
 ```text
-Browser A ── WebSocket ── FastAPI process A ─┐
-                                             ├── Redis 7
-Browser B ── WebSocket ── FastAPI process B ─┘   ├── authoritative room/player state
-                                                 ├── atomic matchmaking/completion
-                                                 └── Pub/Sub room events
+Browsers ── HTTP/WebSocket ── Nginx gateway :8080
+                                  ├── FastAPI app-a :8000 ─┐
+                                  └── FastAPI app-b :8000 ─┼── Redis 7
+                                                          └── state + Pub/Sub
 ```
 
-Each FastAPI process owns only its local WebSocket connections. Redis is authoritative for shared game state, and Pub/Sub notifies every process that currently hosts a player in the room.
+Nginx distributes new HTTP and WebSocket connections between two independent FastAPI containers. Each application container owns only its local sockets. Redis is private to the Compose network and remains authoritative for matchmaking, race state, atomic finish order, and cross-replica events.
 
 ## Requirements
 
@@ -92,6 +94,32 @@ uvicorn app.main:app --host 127.0.0.1 --port 8001
 
 Open http://127.0.0.1:8000 and http://127.0.0.1:8001. Players connected to different processes should join the same room, see the same countdown and progress, and receive identical standings.
 
+## Run with Docker Compose
+
+Build and start Redis, two FastAPI replicas, and the Nginx gateway:
+
+```bash
+docker compose up -d --build --wait
+```
+
+Open http://127.0.0.1:8080 in two browser windows. Nginx forwards both normal HTTP traffic and WebSocket connections to the application replicas. The direct replica endpoints at ports `8000` and `8001` are available for local verification only.
+
+Inspect the stack and logs:
+
+```bash
+docker compose ps
+docker compose logs
+docker compose logs gateway
+```
+
+Stop and remove the containers and private Compose network:
+
+```bash
+docker compose down
+```
+
+The locally built image remains available after shutdown. Compose does not publish Redis to the host; application containers reach it internally at `redis://redis:6379/0`.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -144,10 +172,9 @@ The suite verifies:
 
 ## Next milestones
 
-1. **Docker and Docker Compose** — production-oriented Python image, Redis service, health checks, and multi-replica local stack.
-2. **GitHub Actions CI** — tests, image build, dependency checks, and Trivy scanning on pull requests.
-3. **Local Kubernetes with kind** — manifests, probes, resources, replicas, failures, then Helm.
-4. **Azure with Terraform** — remote state, networking, ACR, AKS, identities, and Key Vault.
-5. **GitOps** — ACR publishing, Helm/Kustomize configuration, and Argo CD reconciliation.
-6. **Observability and scaling** — Prometheus, Grafana, KEDA, load tests, alerts, and controlled failures.
-7. **Optional persistence** — PostgreSQL results/leaderboard and an optional separate Java service only if justified.
+1. **GitHub Actions CI** — tests, image build, dependency checks, and Trivy scanning on pull requests.
+2. **Local Kubernetes with kind** — manifests, probes, resources, replicas, failures, then Helm.
+3. **Azure with Terraform** — remote state, networking, ACR, AKS, identities, and Key Vault.
+4. **GitOps** — ACR publishing, Helm/Kustomize configuration, and Argo CD reconciliation.
+5. **Observability and scaling** — Prometheus, Grafana, KEDA, load tests, alerts, and controlled failures.
+6. **Optional persistence** — PostgreSQL results/leaderboard and an optional separate Java service only if justified.
