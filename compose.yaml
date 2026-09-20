@@ -1,0 +1,46 @@
+name: typescale
+
+x-game: &game
+  image: typescale-app:dev
+  build: .
+  environment:
+    REDIS_URL: redis://redis:6379/0
+    TYPESCALE_NAMESPACE: typescale
+  depends_on:
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  app-a:
+    <<: *game
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  app-b:
+    <<: *game
+    ports:
+      - "127.0.0.1:8001:8000"
+
+  gateway:
+    image: nginx:stable-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      app-a:
+        condition: service_healthy
+      app-b:
+        condition: service_healthy
+    restart: unless-stopped
