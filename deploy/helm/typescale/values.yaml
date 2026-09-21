@@ -1,0 +1,81 @@
+nameOverride: ""
+fullnameOverride: ""
+
+app:
+  replicaCount: 2
+  image:
+    repository: typescale
+    tag: v0.5.5-dev
+    digest: ""
+    pullPolicy: IfNotPresent
+  namespacePrefix: ""
+  service:
+    type: ClusterIP
+    port: 80
+  publicService:
+    enabled: false
+    type: LoadBalancer
+    port: 80
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  startupProbe:
+    periodSeconds: 2
+    failureThreshold: 15
+  readinessProbe:
+    periodSeconds: 5
+  livenessProbe:
+    periodSeconds: 10
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+redis:
+  replicaCount: 1
+  image:
+    repository: redis
+    tag: 7-alpine
+    digest: sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7
+    pullPolicy: IfNotPresent
+  service:
+    port: 6379
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  readinessProbe:
+    initialDelaySeconds: 2
+    periodSeconds: 5
+  livenessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+networkPolicy:
+  enabled: true

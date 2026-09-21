@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "typescale.appFullname" . }}
+  labels:
+    {{- include "typescale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: application
+spec:
+  replicas: {{ .Values.app.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "typescale.appSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "typescale.appSelectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.app.podSecurityContext | nindent 8 }}
+      containers:
+        - name: typescale
+          image: "{{ .Values.app.image.repository }}{{ if .Values.app.image.digest }}@{{ .Values.app.image.digest }}{{ else }}:{{ .Values.app.image.tag }}{{ end }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: REDIS_URL
+              value: "redis://{{ include "typescale.redisFullname" . }}:{{ .Values.redis.service.port }}/0"
+            - name: TYPESCALE_NAMESPACE
+              value: {{ default (printf "typescale:%s" .Release.Namespace) .Values.app.namespacePrefix | quote }}
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            periodSeconds: {{ .Values.app.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.app.startupProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: {{ .Values.app.readinessProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: {{ .Values.app.livenessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.app.containerSecurityContext | nindent 12 }}

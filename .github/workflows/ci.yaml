@@ -73,3 +73,47 @@ jobs:
           exit-code: "1"
           severity: HIGH,CRITICAL
           vuln-type: os,library
+
+  helm:
+    name: Helm Chart Validation
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.3.0
+
+      - name: Lint chart
+        run: >-
+          helm lint --strict deploy/helm/typescale
+          -f deploy/helm/typescale/values-orbstack.yaml
+
+      - name: Render, validate, and package chart
+        run: |
+          helm template typescale deploy/helm/typescale \
+            --namespace typescale-ci \
+            > /tmp/typescale-default.yaml
+          helm template typescale deploy/helm/typescale \
+            --namespace typescale-ci \
+            -f deploy/helm/typescale/values-orbstack.yaml \
+            > /tmp/typescale-orbstack.yaml
+          helm template aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            deploy/helm/typescale \
+            --namespace typescale-ci \
+            -f deploy/helm/typescale/values-orbstack.yaml \
+            > /tmp/typescale-long-name.yaml
+
+          python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+          python3 -c 'import yaml; docs=[d for d in yaml.safe_load_all(open("/tmp/typescale-long-name.yaml")) if d]; keys=[(d["apiVersion"], d["kind"], d["metadata"].get("namespace", ""), d["metadata"]["name"]) for d in docs]; assert len(keys) == len(set(keys)); assert all(len(key[3]) <= 63 for key in keys)'
+
+          for manifest in /tmp/typescale-default.yaml /tmp/typescale-orbstack.yaml /tmp/typescale-long-name.yaml; do
+            docker run --rm -i \
+              ghcr.io/yannh/kubeconform:v0.7.0@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c \
+              -strict -summary -kubernetes-version 1.31.0 - < "$manifest"
+          done
+
+          helm package deploy/helm/typescale --destination /tmp

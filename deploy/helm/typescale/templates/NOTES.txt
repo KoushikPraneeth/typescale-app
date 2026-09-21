@@ -1,0 +1,13 @@
+TypeScale is installed in namespace {{ .Release.Namespace }}.
+
+Check rollout status:
+  kubectl rollout status deployment/{{ include "typescale.redisFullname" . }} -n {{ .Release.Namespace }}
+  kubectl rollout status deployment/{{ include "typescale.appFullname" . }} -n {{ .Release.Namespace }}
+
+{{- if .Values.app.publicService.enabled }}
+Open the OrbStack-local endpoint:
+  http://{{ include "typescale.publicFullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+{{- else }}
+Forward the private service locally:
+  kubectl port-forward -n {{ .Release.Namespace }} service/{{ include "typescale.appFullname" . }} 8080:{{ .Values.app.service.port }}
+{{- end }}

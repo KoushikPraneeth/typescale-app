@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "typescale.testFullname" . }}"
+  labels:
+    {{- include "typescale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: connection-test
+      image: "{{ .Values.app.image.repository }}{{ if .Values.app.image.digest }}@{{ .Values.app.image.digest }}{{ else }}:{{ .Values.app.image.tag }}{{ end }}"
+      imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+      command:
+        - python
+        - -c
+        - |
+          import time
+          import urllib.request
+
+          url = "http://{{ include "typescale.appFullname" . }}:{{ .Values.app.service.port }}/health/ready"
+          for attempt in range(10):
+              try:
+                  assert urllib.request.urlopen(url, timeout=5).status == 200
+                  break
+              except OSError:
+                  if attempt == 9:
+                      raise
+                  time.sleep(1)
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL

@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "typescale.appFullname" . }}
+  labels:
+    {{- include "typescale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: application
+spec:
+  type: {{ .Values.app.service.type }}
+  selector:
+    {{- include "typescale.appSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.app.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- if .Values.app.publicService.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "typescale.publicFullname" . }}
+  labels:
+    {{- include "typescale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: application
+spec:
+  type: {{ .Values.app.publicService.type }}
+  selector:
+    {{- include "typescale.appSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.app.publicService.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "typescale.redisFullname" . }}
+  labels:
+    {{- include "typescale.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "typescale.redisSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: redis
+      port: {{ .Values.redis.service.port }}
+      targetPort: redis
+      protocol: TCP
