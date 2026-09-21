@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: typescale
+  namespace: typescale
+  labels:
+    app.kubernetes.io/name: typescale
+    app.kubernetes.io/component: application
+spec:
+  selector:
+    app.kubernetes.io/name: typescale
+    app.kubernetes.io/component: application
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP
