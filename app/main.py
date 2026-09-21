@@ -6,9 +6,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from redis.exceptions import RedisError
 
 from app.game_manager import DistributedGameManager
 from app.redis_repository import RedisRoomRepository
@@ -20,6 +21,7 @@ NICKNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{1,19}$")
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    application.state.initialized = False
     repository = RedisRoomRepository(
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
         namespace=os.getenv("TYPESCALE_NAMESPACE", "typescale"),
@@ -27,9 +29,11 @@ async def lifespan(application: FastAPI):
     manager = DistributedGameManager(repository)
     await manager.start()
     application.state.manager = manager
+    application.state.initialized = True
     try:
         yield
     finally:
+        application.state.initialized = False
         await manager.close()
 
 
@@ -44,7 +48,27 @@ async def index() -> FileResponse:
 
 @app.get("/health")
 async def health() -> dict:
-    await app.state.manager.repository.ping()
+    return await readiness()
+
+
+@app.get("/health/live")
+async def liveness() -> dict:
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def readiness() -> dict:
+    try:
+        await app.state.manager.repository.ping()
+    except RedisError as error:
+        raise HTTPException(status_code=503, detail="Redis is unavailable") from error
+    return {"status": "ok"}
+
+
+@app.get("/health/startup")
+async def startup() -> dict:
+    if not getattr(app.state, "initialized", False):
+        raise HTTPException(status_code=503, detail="Application is not initialized")
     return {"status": "ok"}
 
 

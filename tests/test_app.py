@@ -8,14 +8,17 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 import websockets
 from fastapi.testclient import TestClient
 from redis import Redis
+from redis.exceptions import RedisError
 
+from app.game_manager import DistributedGameManager
 from app.main import app
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,9 +41,126 @@ def isolated_redis(monkeypatch):
 def test_health_and_frontend():
     with TestClient(app) as client:
         assert client.get("/health").json() == {"status": "ok"}
+        assert client.get("/health/live").json() == {"status": "ok"}
+        assert client.get("/health/ready").json() == {"status": "ok"}
+        assert client.get("/health/startup").json() == {"status": "ok"}
         page = client.get("/")
         assert page.status_code == 200
         assert "TypeScale" in page.text
+
+
+def test_redis_outage_affects_readiness_not_liveness():
+    with TestClient(app) as client:
+        repository = app.state.manager.repository
+        original_ping = repository.ping
+        repository.ping = AsyncMock(side_effect=RedisError("Redis unavailable"))
+        try:
+            assert client.get("/health/live").status_code == 200
+            assert client.get("/health/startup").status_code == 200
+            assert client.get("/health/ready").status_code == 503
+            assert client.get("/health").status_code == 503
+        finally:
+            repository.ping = original_ping
+
+
+class FakePubSub:
+    def __init__(self, subscribe_error=None, messages=None):
+        self.subscribe_error = subscribe_error
+        self.messages = list(messages or [])
+        self.closed = False
+
+    async def psubscribe(self, _pattern):
+        if self.subscribe_error:
+            raise self.subscribe_error
+
+    async def get_message(self, **_kwargs):
+        if self.messages:
+            message = self.messages.pop(0)
+            if isinstance(message, Exception):
+                raise message
+            return message
+        await asyncio.Event().wait()
+
+    async def aclose(self):
+        self.closed = True
+
+
+class FakeRedisClient:
+    def __init__(self, pubsubs):
+        self.pubsubs = list(pubsubs)
+        self.created = []
+
+    def pubsub(self):
+        pubsub = self.pubsubs.pop(0)
+        self.created.append(pubsub)
+        return pubsub
+
+
+class FakeRepository:
+    event_pattern = "typescale:test:room:*:events"
+
+    def __init__(self, pubsubs):
+        self.redis = FakeRedisClient(pubsubs)
+        self.ping_calls = 0
+        self.closed = False
+
+    async def ping(self):
+        self.ping_calls += 1
+
+    async def close(self):
+        self.closed = True
+
+
+def test_manager_retries_failed_initial_subscription(monkeypatch):
+    monkeypatch.setattr("app.game_manager.REDIS_RETRY_DELAY_SECONDS", 0)
+    failed = FakePubSub(subscribe_error=RedisError("Redis starting"))
+    recovered = FakePubSub()
+    repository = FakeRepository([failed, recovered])
+
+    async def scenario():
+        manager = DistributedGameManager(cast(Any, repository))
+        await manager.start()
+        assert repository.ping_calls == 2
+        assert failed.closed
+        assert manager.pubsub is recovered
+        await manager.close()
+        assert recovered.closed
+        assert repository.closed
+
+    asyncio.run(scenario())
+
+
+def test_manager_resubscribes_after_pubsub_connection_loss(monkeypatch):
+    monkeypatch.setattr("app.game_manager.REDIS_RETRY_DELAY_SECONDS", 0)
+    disconnected = FakePubSub(messages=[RedisError("connection lost")])
+    recovered = FakePubSub(
+        messages=[
+            {
+                "type": "pmessage",
+                "data": json.dumps({"type": "probe", "roomId": "room-1"}),
+            }
+        ]
+    )
+    repository = FakeRepository([disconnected, recovered])
+
+    async def scenario():
+        manager = DistributedGameManager(cast(Any, repository))
+        delivered = asyncio.Event()
+        captured = []
+
+        async def capture(room_id: str, payload: dict):
+            captured.append((room_id, payload["type"]))
+            delivered.set()
+
+        monkeypatch.setattr(manager, "_send_to_local_room", capture)
+        await manager.start()
+        await asyncio.wait_for(delivered.wait(), timeout=1)
+        assert disconnected.closed
+        assert manager.pubsub is recovered
+        assert captured == [("room-1", "probe")]
+        await manager.close()
+
+    asyncio.run(scenario())
 
 
 def test_passage_highlights_only_the_incorrect_character():

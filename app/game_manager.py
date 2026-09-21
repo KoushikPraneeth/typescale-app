@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 from fastapi import WebSocket
+from redis.exceptions import RedisError
 
 from app.game_logic import calculate_progress
 from app.redis_repository import RedisRoomRepository
@@ -18,6 +19,8 @@ PARAGRAPHS = [
     "Measure what matters, automate repeatable work, and learn from every failure.",
     "A calm engineer reads the evidence before changing a production system.",
 ]
+REDIS_RETRY_ATTEMPTS = 30
+REDIS_RETRY_DELAY_SECONDS = 1
 
 
 @dataclass
@@ -35,10 +38,27 @@ class DistributedGameManager:
         self.countdown_tasks: Dict[str, asyncio.Task] = {}
 
     async def start(self) -> None:
-        await self.repository.ping()
+        for attempt in range(REDIS_RETRY_ATTEMPTS):
+            try:
+                await self.repository.ping()
+                await self._subscribe()
+                break
+            except RedisError:
+                await self._reset_subscription()
+                if attempt == REDIS_RETRY_ATTEMPTS - 1:
+                    raise
+                await asyncio.sleep(REDIS_RETRY_DELAY_SECONDS)
+        self.listener_task = asyncio.create_task(self._listen_for_events())
+
+    async def _subscribe(self) -> None:
         self.pubsub = self.repository.redis.pubsub()
         await self.pubsub.psubscribe(self.repository.event_pattern)
-        self.listener_task = asyncio.create_task(self._listen_for_events())
+
+    async def _reset_subscription(self) -> None:
+        if self.pubsub:
+            with contextlib.suppress(RedisError):
+                await self.pubsub.aclose()
+        self.pubsub = None
 
     async def close(self) -> None:
         for task in list(self.countdown_tasks.values()):
@@ -47,23 +67,31 @@ class DistributedGameManager:
             self.listener_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self.listener_task
-        if self.pubsub:
-            await self.pubsub.aclose()
+        await self._reset_subscription()
         await self.repository.close()
 
     async def _listen_for_events(self) -> None:
-        assert self.pubsub is not None
         while True:
-            message = await self.pubsub.get_message(
-                ignore_subscribe_messages=True, timeout=1.0
-            )
-            if message and message.get("type") == "pmessage":
-                try:
-                    event = json.loads(message["data"])
-                    await self._send_to_local_room(event["roomId"], event)
-                except (KeyError, TypeError, json.JSONDecodeError):
-                    pass
-            await asyncio.sleep(0)
+            try:
+                if self.pubsub is None:
+                    await self._subscribe()
+                pubsub = self.pubsub
+                assert pubsub is not None
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=1.0
+                )
+                if message and message.get("type") == "pmessage":
+                    try:
+                        event = json.loads(message["data"])
+                        await self._send_to_local_room(event["roomId"], event)
+                    except (KeyError, TypeError, json.JSONDecodeError):
+                        pass
+                await asyncio.sleep(0)
+            except asyncio.CancelledError:
+                raise
+            except RedisError:
+                await self._reset_subscription()
+                await asyncio.sleep(REDIS_RETRY_DELAY_SECONDS)
 
     async def _send(self, connection: LocalConnection, payload: Dict) -> bool:
         try:
