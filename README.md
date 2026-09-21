@@ -2,7 +2,7 @@
 
 TypeScale is a local multiplayer typing race and a distributed-application foundation for an Azure/AKS engineering project.
 
-**Current milestone: v0.3 — containerized distributed multiplayer.**
+**Current milestone: v0.4 — automated tests, image builds, and vulnerability scanning.**
 
 ## What works now
 
@@ -15,7 +15,8 @@ TypeScale is a local multiplayer typing race and a distributed-application found
 - Atomic Lua operations for matchmaking slots and finish ordering
 - Redis Pub/Sub fan-out between independent FastAPI processes
 - Active-room and completed-room TTL cleanup
-- Non-root Python 3.13 application image with a Docker health check
+- Hardened, non-root Python 3.13 Alpine image with build tooling removed
+- Blocking Trivy scan for HIGH and CRITICAL OS/library vulnerabilities
 - Docker Compose stack with private Redis and two FastAPI replicas
 - Nginx HTTP/WebSocket gateway with round-robin upstream routing
 - Responsive browser UI, disconnect handling, and replay flow
@@ -34,17 +35,17 @@ Nginx distributes new HTTP and WebSocket connections between two independent Fas
 
 ## Requirements
 
-- Python 3.9+ for the current local environment
+- Python 3.10+ for local development (Python 3.13 recommended)
 - Docker-compatible runtime such as OrbStack or Docker Desktop
 - Node.js only for the frontend regression test
 
-Python 3.9 is supported by the current code but is end-of-life upstream. Use Python 3.12 or 3.13 for the production container milestone.
+The pinned FastAPI release requires Python 3.10 or newer. CI and the production image use Python 3.13.
 
 ## Setup
 
 ```bash
 cd /Users/praneethkoushik/Dev/typescale-app
-python3 -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt

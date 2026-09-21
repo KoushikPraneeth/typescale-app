@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-alpine
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -8,8 +8,9 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt \
-    && groupadd --gid 10001 app \
-    && useradd --uid 10001 --gid app --create-home app
+    && python -m pip uninstall -y pip setuptools wheel \
+    && addgroup -g 10001 -S app \
+    && adduser -u 10001 -S -D -H -G app app
 
 COPY --chown=app:app app ./app
 COPY --chown=app:app frontend ./frontend
