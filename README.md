@@ -24,6 +24,7 @@ TypeScale is a local multiplayer typing race and a distributed-application found
 - OrbStack Kubernetes deployment with Kustomize, probes, resource limits, NetworkPolicies, two application replicas, and a private Redis service
 - Helm chart with schema-validated values, an OrbStack override, release tests, and CI validation
 - Main-branch container publishing to GHCR with immutable commit-SHA tags after Trivy succeeds
+- GitOps handoff to [`typescale-platform`](https://github.com/KoushikPraneeth/typescale-platform), where Argo CD owns cluster reconciliation
 
 ## Current architecture
 
@@ -154,7 +155,11 @@ kubectl kustomize deploy/kubernetes
 kubectl apply --dry-run=server -k deploy/kubernetes
 ```
 
-Kustomize renders and applies the desired resources, but it is not a continuously reconciling GitOps controller. Argo CD will provide drift correction in a later milestone.
+Kustomize remains the readable, manually applied baseline. The continuously reconciled
+local deployment is defined in
+[`typescale-platform`](https://github.com/KoushikPraneeth/typescale-platform), where
+Argo CD tracks the approved image tag and digest and corrects cluster drift. Application
+CI publishes images but never deploys the workload.
 
 ### Health endpoints
 
@@ -309,7 +314,7 @@ The suite verifies:
 
 ## Next milestones
 
-1. **Azure with Terraform** — remote state, networking, ACR, AKS, identities, Key Vault, cost controls, and teardown procedures.
-2. **GitOps** — ACR publishing, Helm configuration, and Argo CD reconciliation.
-3. **Observability and scaling** — Prometheus, Grafana, KEDA, load tests, alerts, and controlled failures.
+1. **Observability and scaling** — Prometheus, Grafana, KEDA, load tests, alerts, and controlled failures.
+2. **Azure-compatible Terraform practice** — Floci AZ experiments with explicit documentation of the emulator boundary.
+3. **Real Azure later** — remote state, networking, ACR, AKS, identities, Key Vault, cost controls, and teardown procedures when a subscription is available.
 4. **Optional persistence** — PostgreSQL results/leaderboard only if later product requirements justify it.
