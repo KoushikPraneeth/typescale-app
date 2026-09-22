@@ -1,5 +1,14 @@
 FROM python:3.13-alpine
 
+ARG VCS_REF=unknown
+ARG IMAGE_VERSION=dev
+
+LABEL org.opencontainers.image.title="TypeScale" \
+    org.opencontainers.image.description="Distributed multiplayer typing race" \
+    org.opencontainers.image.source="https://github.com/KoushikPraneeth/typescale-app" \
+    org.opencontainers.image.revision="$VCS_REF" \
+    org.opencontainers.image.version="$IMAGE_VERSION"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1

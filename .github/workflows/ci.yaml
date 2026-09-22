@@ -57,13 +57,24 @@ jobs:
   container:
     name: Container Build and Scan
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_REF: ghcr.io/koushikpraneeth/typescale:${{ github.sha }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
       - name: Build Docker image
-        run: docker build -t typescale:ci .
+        run: |
+          docker build \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --build-arg IMAGE_VERSION="${{ github.sha }}" \
+            --tag typescale:ci \
+            --tag "$IMAGE_REF" \
+            .
 
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
@@ -73,6 +84,17 @@ jobs:
           exit-code: "1"
           severity: HIGH,CRITICAL
           vuln-type: os,library
+
+      - name: Publish immutable image to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+          docker push "$IMAGE_REF"
+          docker logout ghcr.io
 
   helm:
     name: Helm Chart Validation

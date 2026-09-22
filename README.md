@@ -2,7 +2,7 @@
 
 TypeScale is a local multiplayer typing race and a distributed-application foundation for an Azure/AKS engineering project.
 
-**Current milestone: v0.6 — validated Helm packaging for the local Kubernetes stack.**
+**Current milestone: v0.7 — immutable GHCR publishing for GitOps delivery.**
 
 ## What works now
 
@@ -23,6 +23,7 @@ TypeScale is a local multiplayer typing race and a distributed-application found
 - Automated same-process and cross-process WebSocket race tests
 - OrbStack Kubernetes deployment with Kustomize, probes, resource limits, NetworkPolicies, two application replicas, and a private Redis service
 - Helm chart with schema-validated values, an OrbStack override, release tests, and CI validation
+- Main-branch container publishing to GHCR with immutable commit-SHA tags after Trivy succeeds
 
 ## Current architecture
 
@@ -242,6 +243,16 @@ Remove the release and its test namespace:
 helm uninstall typescale --namespace typescale-helm
 kubectl delete namespace typescale-helm
 ```
+
+## Container publishing
+
+Pull requests build and scan the container without publishing it. A push to `main` publishes the exact scanned image as:
+
+```text
+ghcr.io/koushikpraneeth/typescale:<full-git-commit-sha>
+```
+
+The image carries OCI source, revision, and version labels linking it to this repository. CI does not deploy the image directly; Argo CD owns deployment reconciliation from the separate `typescale-platform` repository. This prevents GitHub Actions and Argo CD from competing over the same Kubernetes resources.
 
 ## Configuration
 
