@@ -1,0 +1,6 @@
+app:
+  image:
+    digest: sha256:fee9d667cb8be385fc27769fb5178959fe3d4f0102f9ba71f4b6b8bfbb9f78dc
+  publicService:
+    enabled: true
+    type: LoadBalancer

@@ -2,7 +2,7 @@
 
 TypeScale is a local multiplayer typing race and a distributed-application foundation for an Azure/AKS engineering project.
 
-**Current milestone: v0.5 — local Kubernetes deployment and failure testing.**
+**Current milestone: v0.6 — validated Helm packaging for the local Kubernetes stack.**
 
 ## What works now
 
@@ -22,6 +22,7 @@ TypeScale is a local multiplayer typing race and a distributed-application found
 - Responsive browser UI, disconnect handling, and replay flow
 - Automated same-process and cross-process WebSocket race tests
 - OrbStack Kubernetes deployment with Kustomize, probes, resource limits, NetworkPolicies, two application replicas, and a private Redis service
+- Helm chart with schema-validated values, an OrbStack override, release tests, and CI validation
 
 ## Current architecture
 
@@ -204,6 +205,44 @@ kubectl rollout status deployment/typescale -n typescale
 
 Observed result: Kubernetes restored two Ready replicas and a healthy public endpoint, but WebSocket clients attached to the deleted pod disconnected and did not automatically rejoin the active room. This is documented as a limitation rather than described as uninterrupted recovery.
 
+## Install with Helm
+
+The raw manifests remain the readable Kubernetes baseline. The Helm chart packages the same architecture for repeatable, environment-specific releases.
+
+Validate and install it into a clean OrbStack namespace:
+
+```bash
+helm lint --strict deploy/helm/typescale \
+  -f deploy/helm/typescale/values-orbstack.yaml
+
+helm upgrade --install typescale deploy/helm/typescale \
+  --namespace typescale-helm \
+  --create-namespace \
+  -f deploy/helm/typescale/values-orbstack.yaml \
+  --wait \
+  --timeout 3m \
+  --rollback-on-failure
+
+helm test typescale --namespace typescale-helm --logs
+```
+
+`values.yaml` is private by default and does not create a public Service. Image templates support digest-pinned references; Redis is pinned by digest, and the OrbStack override pins the locally verified TypeScale image. After rebuilding that local image, update `app.image.digest` from `docker image inspect typescale:v0.5.5-dev --format '{{json .RepoDigests}}'` before installing. `values-orbstack.yaml` enables the local LoadBalancer. OrbStack maps one local LoadBalancer address per port; if the raw Kustomize stack is still using port 80, add `--set app.publicService.port=8081` to the Helm command. Override values without editing templates, for example:
+
+```bash
+helm upgrade typescale deploy/helm/typescale \
+  --namespace typescale-helm \
+  -f deploy/helm/typescale/values-orbstack.yaml \
+  --set app.replicaCount=4 \
+  --wait
+```
+
+Remove the release and its test namespace:
+
+```bash
+helm uninstall typescale --namespace typescale-helm
+kubectl delete namespace typescale-helm
+```
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -259,8 +298,7 @@ The suite verifies:
 
 ## Next milestones
 
-1. **Helm packaging** — reproduce the tested Kustomize deployment in a clean namespace with environment-specific values.
-2. **Azure with Terraform** — remote state, networking, ACR, AKS, identities, Key Vault, cost controls, and teardown procedures.
-3. **GitOps** — ACR publishing, Helm configuration, and Argo CD reconciliation.
-4. **Observability and scaling** — Prometheus, Grafana, KEDA, load tests, alerts, and controlled failures.
-5. **Optional persistence** — PostgreSQL results/leaderboard only if later product requirements justify it.
+1. **Azure with Terraform** — remote state, networking, ACR, AKS, identities, Key Vault, cost controls, and teardown procedures.
+2. **GitOps** — ACR publishing, Helm configuration, and Argo CD reconciliation.
+3. **Observability and scaling** — Prometheus, Grafana, KEDA, load tests, alerts, and controlled failures.
+4. **Optional persistence** — PostgreSQL results/leaderboard only if later product requirements justify it.
