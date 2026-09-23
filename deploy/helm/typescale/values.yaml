@@ -5,7 +5,7 @@ app:
   replicaCount: 2
   image:
     repository: typescale
-    tag: v0.5.5-dev
+    tag: v0.8.0-dev
     digest: ""
     pullPolicy: IfNotPresent
   namespacePrefix: ""
@@ -16,6 +16,27 @@ app:
     enabled: false
     type: LoadBalancer
     port: 80
+  metrics:
+    enabled: true
+    path: /metrics
+    port: 9090
+    allowedNamespace: monitoring
+  autoscaling:
+    enabled: false
+    minReplicaCount: 2
+    maxReplicaCount: 5
+    pollingInterval: 15
+    cooldownPeriod: 300
+    fallback:
+      failureThreshold: 3
+      replicas: 5
+      behavior: static
+    prometheus:
+      serverAddress: http://prometheus-server.monitoring.svc.cluster.local
+      jobName: typescale-pods
+      query: ""
+      threshold: "8"
+      activationThreshold: "1"
   podSecurityContext:
     runAsNonRoot: true
     runAsUser: 10001

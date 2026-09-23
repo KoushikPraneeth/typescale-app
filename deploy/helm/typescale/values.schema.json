@@ -8,7 +8,25 @@
     "app": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["replicaCount", "image", "namespacePrefix", "service", "publicService", "podSecurityContext", "containerSecurityContext", "startupProbe", "readinessProbe", "livenessProbe", "resources"],
+      "required": ["replicaCount", "image", "namespacePrefix", "service", "publicService", "metrics", "autoscaling", "podSecurityContext", "containerSecurityContext", "startupProbe", "readinessProbe", "livenessProbe", "resources"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "autoscaling": {
+                "properties": {"enabled": {"const": true}}
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "metrics": {
+                "properties": {"enabled": {"const": true}}
+              }
+            }
+          }
+        }
+      ],
       "properties": {
         "replicaCount": {"type": "integer", "minimum": 1},
         "image": {"$ref": "#/definitions/image"},
@@ -22,6 +40,51 @@
             "enabled": {"type": "boolean"},
             "type": {"type": "string", "enum": ["LoadBalancer", "NodePort", "ClusterIP"]},
             "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "path", "port", "allowedNamespace"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "path": {"type": "string", "pattern": "^/"},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "allowedNamespace": {"type": "string", "minLength": 1, "maxLength": 63}
+          }
+        },
+        "autoscaling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "minReplicaCount", "maxReplicaCount", "pollingInterval", "cooldownPeriod", "fallback", "prometheus"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "minReplicaCount": {"type": "integer", "minimum": 1},
+            "maxReplicaCount": {"type": "integer", "minimum": 1},
+            "pollingInterval": {"type": "integer", "minimum": 1},
+            "cooldownPeriod": {"type": "integer", "minimum": 0},
+            "fallback": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["failureThreshold", "replicas", "behavior"],
+              "properties": {
+                "failureThreshold": {"type": "integer", "minimum": 1},
+                "replicas": {"type": "integer", "minimum": 1},
+                "behavior": {"type": "string", "enum": ["static", "currentReplicas"]}
+              }
+            },
+            "prometheus": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["serverAddress", "jobName", "query", "threshold", "activationThreshold"],
+              "properties": {
+                "serverAddress": {"type": "string", "pattern": "^https?://"},
+                "jobName": {"type": "string", "minLength": 1},
+                "query": {"type": "string"},
+                "threshold": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$"},
+                "activationThreshold": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$"}
+              }
+            }
           }
         },
         "podSecurityContext": {"type": "object"},

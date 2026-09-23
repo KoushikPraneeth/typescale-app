@@ -1,0 +1,57 @@
+# Optional KEDA autoscaling companion for the readable raw-manifest baseline.
+# Install KEDA first, apply the base with `kubectl apply -k deploy/kubernetes`,
+# then apply this file. KEDA/HPA owns replicas while this object exists.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: typescale
+  namespace: typescale
+  labels:
+    app.kubernetes.io/name: typescale
+    app.kubernetes.io/component: application
+spec:
+  scaleTargetRef:
+    name: typescale
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 5
+  fallback:
+    failureThreshold: 3
+    replicas: 5
+    behavior: static
+  advanced:
+    restoreToOriginalReplicaCount: false
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 3
+              periodSeconds: 15
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+          selectPolicy: Max
+        scaleDown:
+          stabilizationWindowSeconds: 180
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+          selectPolicy: Max
+  triggers:
+    - type: prometheus
+      metricType: AverageValue
+      useCachedMetrics: true
+      metadata:
+        serverAddress: http://prometheus-server.monitoring.svc.cluster.local
+        metricName: typescale_active_websocket_connections
+        query: >-
+          sum(typescale_websocket_connections{namespace="typescale",job="typescale-pods",pod=~"typescale-.+"}
+          and on(namespace,job,pod)
+          (up{namespace="typescale",job="typescale-pods",pod=~"typescale-.+"} == 1))
+        threshold: "8"
+        activationThreshold: "1"
+        ignoreNullValues: "false"

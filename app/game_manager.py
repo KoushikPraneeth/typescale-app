@@ -11,6 +11,12 @@ from fastapi import WebSocket
 from redis.exceptions import RedisError
 
 from app.game_logic import calculate_progress
+from app.metrics import (
+    PROGRESS_UPDATES,
+    RACES_FINISHED,
+    RACES_STARTED,
+    REDIS_ERRORS,
+)
 from app.redis_repository import RedisRoomRepository
 
 PARAGRAPHS = [
@@ -44,6 +50,7 @@ class DistributedGameManager:
                 await self._subscribe()
                 break
             except RedisError:
+                REDIS_ERRORS.labels(operation="startup").inc()
                 await self._reset_subscription()
                 if attempt == REDIS_RETRY_ATTEMPTS - 1:
                     raise
@@ -90,6 +97,7 @@ class DistributedGameManager:
             except asyncio.CancelledError:
                 raise
             except RedisError:
+                REDIS_ERRORS.labels(operation="pubsub").inc()
                 await self._reset_subscription()
                 await asyncio.sleep(REDIS_RETRY_DELAY_SECONDS)
 
@@ -254,6 +262,7 @@ class DistributedGameManager:
             await asyncio.sleep(max(0, (next_tick - time.time() * 1000) / 1000))
         started_at = int(time.time() * 1000)
         if await self.repository.start_race(room_id, started_at):
+            RACES_STARTED.inc()
             snapshot = await self.repository.snapshot(room_id)
             await self.repository.publish(
                 room_id,
@@ -301,6 +310,7 @@ class DistributedGameManager:
             )
         except RuntimeError:
             return
+        PROGRESS_UPDATES.inc()
         if metrics.incorrect_positions:
             await self._send_to_player(
                 room_id,
@@ -326,6 +336,7 @@ class DistributedGameManager:
             },
         )
         if finalized:
+            RACES_FINISHED.inc()
             await self.repository.publish(
                 room_id,
                 {
@@ -350,6 +361,7 @@ class DistributedGameManager:
             },
         )
         if finalized:
+            RACES_FINISHED.inc()
             await self.repository.publish(
                 room_id,
                 {

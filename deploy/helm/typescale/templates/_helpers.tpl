@@ -63,6 +63,10 @@ app.kubernetes.io/component: redis
 {{- printf "%s-allow-redis" (include "typescale.fullname" . | trunc 51 | trimSuffix "-") }}
 {{- end }}
 
+{{- define "typescale.allowMetricsFullname" -}}
+{{- printf "%s-allow-metrics" (include "typescale.fullname" . | trunc 49 | trimSuffix "-") }}
+{{- end }}
+
 {{- define "typescale.testFullname" -}}
 {{- printf "%s-test" (include "typescale.fullname" . | trunc 58 | trimSuffix "-") }}
 {{- end }}

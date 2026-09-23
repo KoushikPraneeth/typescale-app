@@ -2,7 +2,7 @@
 
 TypeScale is a local multiplayer typing race and a distributed-application foundation for an Azure/AKS engineering project.
 
-**Current milestone: v0.7 — immutable GHCR publishing for GitOps delivery.**
+**Current milestone: v0.8 — observable, demand-scaled GitOps delivery.**
 
 ## What works now
 
@@ -25,6 +25,7 @@ TypeScale is a local multiplayer typing race and a distributed-application found
 - Helm chart with schema-validated values, an OrbStack override, release tests, and CI validation
 - Main-branch container publishing to GHCR with immutable commit-SHA tags after Trivy succeeds
 - GitOps handoff to [`typescale-platform`](https://github.com/KoushikPraneeth/typescale-platform), where Argo CD owns cluster reconciliation
+- Prometheus application metrics on a private dedicated port and optional KEDA autoscaling from active WebSocket demand
 
 ## Current architecture
 
@@ -130,7 +131,7 @@ The locally built image remains available after shutdown. Compose does not publi
 Build the local development image, start OrbStack Kubernetes, and apply the complete stack:
 
 ```bash
-docker build --pull -t typescale:v0.5.5-dev .
+docker build --pull -t typescale:v0.8.0-dev .
 orb start k8s
 kubectl config use-context orbstack
 kubectl apply -k deploy/kubernetes
@@ -232,7 +233,7 @@ helm upgrade --install typescale deploy/helm/typescale \
 helm test typescale --namespace typescale-helm --logs
 ```
 
-`values.yaml` is private by default and does not create a public Service. Image templates support digest-pinned references; Redis is pinned by digest, and the OrbStack override pins the locally verified TypeScale image. After rebuilding that local image, update `app.image.digest` from `docker image inspect typescale:v0.5.5-dev --format '{{json .RepoDigests}}'` before installing. `values-orbstack.yaml` enables the local LoadBalancer. OrbStack maps one local LoadBalancer address per port; if the raw Kustomize stack is still using port 80, add `--set app.publicService.port=8081` to the Helm command. Override values without editing templates, for example:
+`values.yaml` is private by default and does not create a public Service. Image templates support digest-pinned references; Redis is pinned by digest, and the OrbStack override pins the locally verified TypeScale image. After rebuilding that local image, update `app.image.digest` from `docker image inspect typescale:v0.8.0-dev --format '{{json .RepoDigests}}'` before installing. `values-orbstack.yaml` enables the local LoadBalancer. OrbStack maps one local LoadBalancer address per port; if the requested port is already in use, override `app.publicService.port` for the additional release.
 
 ```bash
 helm upgrade typescale deploy/helm/typescale \
@@ -259,12 +260,50 @@ ghcr.io/koushikpraneeth/typescale:<full-git-commit-sha>
 
 The image carries OCI source, revision, and version labels linking it to this repository. CI does not deploy the image directly; Argo CD owns deployment reconciliation from the separate `typescale-platform` repository. This prevents GitHub Actions and Argo CD from competing over the same Kubernetes resources.
 
+## Metrics, autoscaling, and synthetic load
+
+The Helm chart starts a dedicated Prometheus endpoint on port `9090` and annotates the
+application pods for scraping. The public application Service continues to expose only
+port `8000`; a NetworkPolicy permits the metrics port only from the configured monitoring
+namespace.
+
+Exported application signals include active WebSocket connections, bounded WebSocket
+message counts, races started and finalized, accepted progress updates, Redis errors,
+and HTTP request count and latency by route.
+
+KEDA support is disabled in chart defaults. When `app.autoscaling.enabled=true`, the
+chart creates a Prometheus-backed `ScaledObject`, omits the Deployment replica field,
+and lets KEDA own scaling between the configured minimum and maximum. Unless an explicit
+PromQL override is supplied, the chart derives the namespace and application pod prefix
+from the Helm release and uses the configured Prometheus scrape job name.
+
+The raw manifests keep KEDA optional so the base Kustomize deployment remains usable
+without the KEDA CRDs. After KEDA is installed, enable equivalent raw-manifest scaling with:
+
+```bash
+kubectl apply -f deploy/kubernetes/autoscaling.yaml
+```
+
+Generate reproducible WebSocket demand with the pinned development dependencies:
+
+```bash
+python loadtest/websocket_load.py \
+  --url ws://192.168.139.2/ws \
+  --clients 40 \
+  --hold-seconds 120 \
+  --ramp-seconds 5
+```
+
+The exact LoadBalancer address is environment-specific; query the public Service instead
+of assuming this example address remains stable.
+
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
 | `TYPESCALE_NAMESPACE` | `typescale` | Key prefix used to isolate an environment |
+| `METRICS_PORT` | unset | Dedicated Prometheus listener; Helm sets this to `9090` |
 
 Do not commit production Redis credentials. Use environment configuration or a secret manager.
 

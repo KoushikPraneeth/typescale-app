@@ -15,6 +15,7 @@ import httpx
 import pytest
 import websockets
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY
 from redis import Redis
 from redis.exceptions import RedisError
 
@@ -47,6 +48,17 @@ def test_health_and_frontend():
         page = client.get("/")
         assert page.status_code == 200
         assert "TypeScale" in page.text
+        assert client.get("/metrics").status_code == 404
+
+
+def test_websocket_connection_gauge_returns_to_zero():
+    with TestClient(app) as client:
+        before = REGISTRY.get_sample_value("typescale_websocket_connections") or 0
+        with client.websocket_connect("/ws"):
+            active = REGISTRY.get_sample_value("typescale_websocket_connections")
+            assert active == before + 1
+        after = REGISTRY.get_sample_value("typescale_websocket_connections")
+        assert after == before
 
 
 def test_redis_outage_affects_readiness_not_liveness():
@@ -202,6 +214,41 @@ def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+def test_metrics_server_uses_dedicated_port(monkeypatch):
+    port = free_port()
+    monkeypatch.setenv("METRICS_PORT", str(port))
+    with TestClient(app):
+        metrics = httpx.get(f"http://127.0.0.1:{port}/metrics", timeout=2)
+        assert metrics.status_code == 200
+        assert metrics.headers["content-type"].startswith("text/plain")
+        assert "typescale_websocket_connections 0.0" in metrics.text
+        assert "typescale_http_requests_total" in metrics.text
+    with pytest.raises(httpx.ConnectError):
+        httpx.get(f"http://127.0.0.1:{port}/metrics", timeout=1)
+
+
+def test_metrics_startup_failure_closes_manager(monkeypatch):
+    closed = False
+    original_close = DistributedGameManager.close
+
+    async def observed_close(manager):
+        nonlocal closed
+        closed = True
+        await original_close(manager)
+
+    monkeypatch.setenv("METRICS_PORT", str(free_port()))
+    monkeypatch.setattr(DistributedGameManager, "close", observed_close)
+    def fail_metrics_start(_port):
+        raise OSError("port unavailable")
+
+    monkeypatch.setattr("app.main.start_http_server", fail_metrics_start)
+
+    with pytest.raises(OSError, match="port unavailable"):
+        with TestClient(app):
+            pass
+    assert closed
 
 
 def start_server(port):

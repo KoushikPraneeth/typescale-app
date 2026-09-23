@@ -6,12 +6,20 @@ metadata:
     {{- include "typescale.labels" . | nindent 4 }}
     app.kubernetes.io/component: application
 spec:
+  {{- if not .Values.app.autoscaling.enabled }}
   replicas: {{ .Values.app.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "typescale.appSelectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- if .Values.app.metrics.enabled }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: {{ .Values.app.metrics.path | quote }}
+        prometheus.io/port: {{ .Values.app.metrics.port | quote }}
+      {{- end }}
       labels:
         {{- include "typescale.appSelectorLabels" . | nindent 8 }}
     spec:
@@ -26,11 +34,20 @@ spec:
             - name: http
               containerPort: 8000
               protocol: TCP
+            {{- if .Values.app.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.app.metrics.port }}
+              protocol: TCP
+            {{- end }}
           env:
             - name: REDIS_URL
               value: "redis://{{ include "typescale.redisFullname" . }}:{{ .Values.redis.service.port }}/0"
             - name: TYPESCALE_NAMESPACE
               value: {{ default (printf "typescale:%s" .Release.Namespace) .Values.app.namespacePrefix | quote }}
+            {{- if .Values.app.metrics.enabled }}
+            - name: METRICS_PORT
+              value: {{ .Values.app.metrics.port | quote }}
+            {{- end }}
           startupProbe:
             httpGet:
               path: /health/startup
