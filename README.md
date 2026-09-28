@@ -291,8 +291,16 @@ python loadtest/websocket_load.py \
   --url ws://192.168.139.2/ws \
   --clients 40 \
   --hold-seconds 120 \
-  --ramp-seconds 5
+  --ramp-seconds 5 \
+  --json-out artifacts/load.json \
+  --csv-out artifacts/load.csv
 ```
+
+The JSON artifact contains one row per client with connection, join, race, and disconnect
+timestamps plus a summary containing success rate, completion rate, peak concurrent sockets,
+and p50/p95/p99 join latency. Failed clients retain a concrete failure reason instead of
+being collapsed into a single counter. The loader exits non-zero when any connection fails,
+which makes it suitable for a bounded CI or deployment smoke test.
 
 The exact LoadBalancer address is environment-specific; query the public Service instead
 of assuming this example address remains stable.
