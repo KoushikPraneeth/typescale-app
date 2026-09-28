@@ -45,6 +45,7 @@ def test_health_and_frontend():
         assert client.get("/health/live").json() == {"status": "ok"}
         assert client.get("/health/ready").json() == {"status": "ok"}
         assert client.get("/health/startup").json() == {"status": "ok"}
+        assert client.get("/openapi.json").json()["info"]["version"] == "1.0.0"
         page = client.get("/")
         assert page.status_code == 200
         assert "TypeScale" in page.text

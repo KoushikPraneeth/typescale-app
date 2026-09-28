@@ -58,7 +58,7 @@ async def lifespan(application: FastAPI):
                 await asyncio.to_thread(metrics_thread.join, 5)
 
 
-app = FastAPI(title="TypeScale", version="0.8.0", lifespan=lifespan)
+app = FastAPI(title="TypeScale", version="1.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
