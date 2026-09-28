@@ -292,15 +292,17 @@ python loadtest/websocket_load.py \
   --clients 40 \
   --hold-seconds 120 \
   --ramp-seconds 5 \
+  --complete-races \
   --json-out artifacts/load.json \
   --csv-out artifacts/load.csv
 ```
 
-The JSON artifact contains one row per client with connection, join, race, and disconnect
-timestamps plus a summary containing success rate, completion rate, peak concurrent sockets,
-and p50/p95/p99 join latency. Failed clients retain a concrete failure reason instead of
-being collapsed into a single counter. The loader exits non-zero when any connection fails,
-which makes it suitable for a bounded CI or deployment smoke test.
+`--complete-races` makes every synthetic player submit the shared paragraph after the race
+starts. Omit it for held-WebSocket capacity tests that should not finish gameplay. The JSON
+artifact contains one row per client with connection, join, race, and disconnect timestamps
+plus success/completion rates, peak concurrent sockets, and p50/p95/p99 matchmaking latency
+measured from `join_sent_at` to `room_joined_at`. Failed clients retain concrete reasons;
+the command exits non-zero if any connection fails.
 
 The exact LoadBalancer address is environment-specific; query the public Service instead
 of assuming this example address remains stable.
