@@ -54,11 +54,13 @@ async def hold_client(
     ramp_delay: float,
     state: LoadState,
     lock: asyncio.Lock,
+    complete_races: bool,
 ) -> ClientResult:
     await asyncio.sleep(index * ramp_delay)
     client_id = f"load-{index:04d}"
     result = ClientResult(client_id=client_id, connect_start=now_iso())
-    connect_started = time.perf_counter()
+    paragraph = ""
+    race_finished = asyncio.Event()
     try:
         async with websockets.connect(
             url,
@@ -68,8 +70,9 @@ async def hold_client(
             ping_timeout=10,
         ) as socket:
             result.connected_at = now_iso()
-            await socket.send(json.dumps({"type": "join", "nickname": client_id}))
+            join_started = time.perf_counter()
             result.join_sent_at = now_iso()
+            await socket.send(json.dumps({"type": "join", "nickname": client_id}))
 
             while True:
                 message = json.loads(await asyncio.wait_for(socket.recv(), timeout=20))
@@ -77,13 +80,16 @@ async def hold_client(
                 if message_type == "joined":
                     result.room_joined_at = now_iso()
                     result.join_latency_ms = elapsed_ms(
-                        connect_started, time.perf_counter()
+                        join_started, time.perf_counter()
                     )
                     break
+                if message_type == "race_ready":
+                    paragraph = str(message.get("paragraph", ""))
                 if message_type == "race_started":
                     result.race_started_at = now_iso()
                 if message_type == "race_finished":
                     result.race_finished_at = now_iso()
+                    race_finished.set()
                 if message_type == "error":
                     raise RuntimeError(message.get("message", "join rejected"))
 
@@ -106,10 +112,17 @@ async def hold_client(
                         await asyncio.wait_for(socket.recv(), timeout=min(remaining, 15))
                     )
                     message_type = message.get("type")
-                    if message_type == "race_started" and result.race_started_at is None:
+                    if message_type == "race_ready":
+                        paragraph = str(message.get("paragraph", ""))
+                    elif message_type == "race_started" and result.race_started_at is None:
                         result.race_started_at = now_iso()
+                        if complete_races and paragraph:
+                            await socket.send(
+                                json.dumps({"type": "progress", "text": paragraph})
+                            )
                     elif message_type == "race_finished":
                         result.race_finished_at = now_iso()
+                        race_finished.set()
                 except asyncio.TimeoutError:
                     continue
         result.disconnected_at = now_iso()
@@ -205,6 +218,7 @@ async def run(args: argparse.Namespace) -> int:
                 args.ramp_seconds / max(args.clients - 1, 1),
                 state,
                 lock,
+                args.complete_races,
             )
             for index in range(args.clients)
         )
@@ -229,9 +243,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ramp-seconds", type=float, default=5)
     parser.add_argument("--json-out", help="Write per-client results and summary as JSON")
     parser.add_argument("--csv-out", help="Write one row per client as CSV")
+    parser.add_argument(
+        "--complete-races",
+        action="store_true",
+        help="Submit the full shared paragraph when each race starts",
+    )
     args = parser.parse_args()
     if args.clients < 1:
         parser.error("--clients must be at least 1")
+    if args.complete_races and args.clients < 2:
+        parser.error("--complete-races requires at least two clients")
     if args.hold_seconds <= 0 or args.ramp_seconds < 0:
         parser.error("hold time must be positive and ramp time cannot be negative")
     return args
