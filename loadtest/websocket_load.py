@@ -27,6 +27,7 @@ class ClientResult:
     race_finished_at: str | None = None
     disconnected_at: str | None = None
     success: bool = False
+    unexpected_disconnect: bool = False
     failure_reason: str | None = None
     join_latency_ms: float | None = None
 
@@ -127,6 +128,7 @@ async def hold_client(
                     continue
         result.disconnected_at = now_iso()
     except Exception as exc:  # Preserve the concrete failure in the result artifact.
+        result.unexpected_disconnect = result.success
         result.failure_reason = f"{type(exc).__name__}: {exc}".strip()
         result.disconnected_at = now_iso()
         async with lock:
@@ -158,6 +160,9 @@ def summarize(results: list[ClientResult], state: LoadState) -> dict[str, Any]:
         "attempted": len(results),
         "successful_connections": len(successful),
         "failed_connections": len(results) - len(successful),
+        "unexpected_disconnects": sum(
+            result.unexpected_disconnect for result in results
+        ),
         "success_rate_percent": round((len(successful) / len(results) * 100), 3)
         if results
         else 0.0,
@@ -176,7 +181,7 @@ def summarize(results: list[ClientResult], state: LoadState) -> dict[str, Any]:
         "failures": [
             {"client_id": result.client_id, "reason": result.failure_reason}
             for result in results
-            if not result.success
+            if not result.success or result.unexpected_disconnect
         ],
     }
 
